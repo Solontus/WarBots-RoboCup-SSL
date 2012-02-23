@@ -9,18 +9,100 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <TimerOne.h>
 
 #define PI 3.14159265
 
 #define WIRELESS_MODE_INFRA	1
 #define WIRELESS_MODE_ADHOC	2
 
-const int wheelFL = 2;
-const int wheelFR = 4;
-const int wheelBK = 7;
-const int PWMFL = 3;
-const int PWMFR = 5;
-const int PWMBK = 6;
+//-- Update the TICKER_MAX and _STEP to 16 16 or 32 8 or 64 4 for performance vs colors available
+#define TICKER_MAX 64
+#define TICKER_STEP 4
+
+//-- May have to tweak the timer
+int timerDelay = 300;
+
+//Pin connected to ST_CP (pin 12) of 74HC595
+int latchPin = 3;
+//Pin connected to SH_CP (pin 11) of 74HC595
+int clockPin = 4;
+//Pin connected to DS (pin14) of 74HC595
+int dataPin = 5;
+//======================
+
+//number of Shift Registers - set to 1 for this example
+int srcount = 1;
+byte srval = 0;
+int ticker = 0;
+
+byte srPins[8] = {
+  0,0,0,0,0,0,0,0
+};
+
+void pwmWrite(int port, byte val){
+  srPins[port] = val;  
+}
+
+void pwmProcess(){
+  ticker = (ticker+1)%TICKER_MAX;
+  int myPos = ticker * TICKER_STEP;
+  int myLev = 0;
+  byte currVal = 0;
+
+  for( int i = 0 ; i < 8 ; i++ ){
+    myLev = 0;
+    if (srPins[i] > myPos)
+      myLev = 1;
+    bitWrite(currVal,i,myLev );
+  }
+
+  srval = currVal;
+
+  shiftRegisterWrite();
+}
+
+void shiftRegisterWrite()
+{
+// bit operations seems to be faster than digital write
+  bitClear(PORTD, latchPin);
+  shiftOut(dataPin, clockPin, MSBFIRST, srval);
+  bitSet(PORTD, latchPin);
+}
+
+void allTo(int val, int delayval){
+  for (int i = 0 ; i < 8 ; i++){
+    pwmWrite(i,val);
+    if( delayval > 0 )
+      delay(delayval);
+  }
+}
+
+
+void allOff(){
+  allTo(0,0);
+}
+void allOn(){
+  allTo(255,0);
+}
+
+void setMotors(int motor1, int motor2, int motor3)
+{
+  pwmWrite(1,255);
+  pwmWrite(3,255);
+  pwmWrite(5,255);
+  
+  if (motor1 < 0)
+    pwmWrite(1,0);  
+  if (motor2 < 0)
+    pwmWrite(3,0);
+  if (motor3 < 0)
+    pwmWrite(5,0);
+    
+  pwmWrite(2,abs(motor1));
+  pwmWrite(4,abs(motor2));
+  pwmWrite(6,abs(motor3));
+}
 
 class instruction{
   public:
@@ -78,86 +160,22 @@ prog_uchar wep_keys[] PROGMEM = {	0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08
 								};
 
 void stopMovement(){
-    analogWrite(PWMFL, 0);
-    analogWrite(PWMFR, 0);
-    analogWrite(PWMBK, 0);
-    digitalWrite(wheelFL, LOW);
-    digitalWrite(wheelFR, LOW);
-    digitalWrite(wheelBK, LOW);
-}
-
-void setWheelFL(double spd){
-  int power = abs((int)(spd * 255.0));
-  if(spd > 0){
-    analogWrite(PWMFL, power);
-    digitalWrite(wheelFL, HIGH);;      
-  }
-  else if(spd < 0){
-    analogWrite(PWMFL, power);
-    digitalWrite(wheelFL, LOW);  
-  }
-  else{
-     //Serial.println("FL stop");
-     analogWrite(PWMFL, 0);
-     digitalWrite(wheelFL, LOW);
-  }
-}
-
-void setWheelFR(double spd){
-  int power = abs((int)(spd * 255.0));
-  if(spd > 0){
-    analogWrite(PWMFR, power);
-    digitalWrite(wheelFR, HIGH);   
-  }
-  else if(spd < 0){
-    analogWrite(PWMFR, power);
-    digitalWrite(wheelFR, LOW);  
-  }
-  else{
-     //Serial.println("FR stop");
-     analogWrite(PWMFR, 0);
-     digitalWrite(wheelFR, LOW);
-  }
-}
-
-void setWheelBK(double spd){
-  int power = abs((int)(spd * 255.0));
-  if(spd > 0){
-    analogWrite(PWMBK, power);
-    digitalWrite(wheelBK, HIGH);    
-  }
-  else if(spd < 0){
-    analogWrite(PWMBK, power);
-    digitalWrite(wheelBK, LOW); 
-  }
-  else{
-     //Serial.println("BK stop");
-     analogWrite(PWMBK, 0);
-     digitalWrite(wheelBK, LOW);
-  }
+   setMotors(0, 0, 0);
 }
 
 void rotate(double spd){
-      setWheelFL(spd);
-      setWheelFR(spd);
-      setWheelBK(spd);
+      int power = (int)(255.0 * spd);
+      setMotors(power, power, power);
 }
-
 
 void runInstr(){
     if(!INSTR.compound){
-        setWheelFL(INSTR.FL1);
-        setWheelFR(INSTR.FR1);
-        setWheelBK(INSTR.BK1);
+        setMotors(INSTR.FL1, INSTR.FR1, INSTR.BK1);
     }
     else{
-        setWheelFL(INSTR.FL1);
-        setWheelFR(INSTR.FR1);
-        setWheelBK(INSTR.BK1);
+        setMotors(INSTR.FL1, INSTR.FR1, INSTR.BK1);
         delay(500);
-        setWheelFL(INSTR.FL2);
-        setWheelFR(INSTR.FR2);
-        setWheelBK(INSTR.BK2);
+        setMotors(INSTR.FL2, INSTR.FR2, INSTR.BK2);
         delay(500);
         stopMovement();
     }
@@ -190,6 +208,10 @@ void process_message(){
         }
     
         useInstr = false;
+        double v;
+        double dir;
+        double v1;
+        double v2;
         
     	//execute
     	switch(command){
@@ -229,10 +251,10 @@ void process_message(){
                         * v2 = v*cos(pi - dir)
                         */
                         
-                        double v = arguments[0];
-                        double dir = arguments[1] % (2*PI);
-                        double v1 = v * cos(dir);
-                        double v2 = v * cos(PI - dir);
+                        v = arguments[0];
+                        dir = fmod(arguments[1], (2*PI));
+                        v1 = v * cos(dir);
+                        v2 = v * cos(PI - dir);
                         
                         if((dir <= 2*PI/3) || (dir > 5*PI/3)){
                             INSTR = instruction(v1, 0, -v1, -v2, v2, 0);
@@ -268,7 +290,6 @@ void process_message(){
 }
 
 
-
 // setup the wireless mode
 // infrastructure - connect to AP
 // adhoc - connect to another WiFi device
@@ -284,12 +305,16 @@ void setup()
 	WiFi.init();
         Serial.print("---Program");
         Serial.println(" Begins---");
-        pinMode(wheelFL, OUTPUT);
-        pinMode(wheelFR, OUTPUT);
-        pinMode(wheelBK, OUTPUT);
-        pinMode(PWMFL, OUTPUT);
-        pinMode(PWMFR, OUTPUT);
-        pinMode(PWMBK, OUTPUT);  
+        pinMode(latchPin, OUTPUT);
+        pinMode(clockPin, OUTPUT);
+        pinMode(dataPin, OUTPUT);
+       
+        digitalWrite(latchPin,LOW);
+        digitalWrite(dataPin,LOW);
+        digitalWrite(clockPin,LOW);
+      
+        Timer1.initialize(timerDelay); // Timer for updating pwm pins
+        Timer1.attachInterrupt(pwmProcess);
 }
 
 void loop()
@@ -300,5 +325,4 @@ void loop()
             runInstr();
 
 	WiFi.run();
-        delay(10);
 }

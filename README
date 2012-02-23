@@ -1,1 +1,6 @@
 WarBots RoboCup SSL Repository
+
+SocketApp: Arduino code for wireless communications
+	The Arduino IDE requires:
+	-TimerOne: http://code.google.com/p/arduino-timerone
+	-WiShield: https://github.com/linksprite/ZG2100BasedWiFiShield
